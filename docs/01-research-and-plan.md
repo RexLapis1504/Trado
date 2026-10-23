@@ -14,6 +14,7 @@ How the facts were checked: GitHub repo metadata (stars, licence, last push, ope
 - **Top picks:** yfinance + exchange_calendars for data, DuckDB/Parquet for storage, TA-Lib to cross-check our indicators, skfolio for clustering and risk, quantstats for reports, Streamlit for the dashboard. All are permissive licences (Apache, MIT or BSD).
 - **Licence traps to avoid:** backtrader (GPL-3.0, last release 2023), backtesting.py (AGPL-3.0), NautilusTrader (LGPL-3.0, fine to use but note it), vectorbt (Apache-2.0 **plus Commons Clause**, so no selling), ArcticDB (Business Source Licence).
 - **Dead or risky:** the original `twopirllc/pandas-ta` GitHub repo now returns 404. PyPI only has a 0.4.x beta (Sep 2025). Don't depend on it. FinRL's last PyPI release was Apr 2024.
+- **Global coverage (§1.5):** a live test of Yahoo's free chart API returned daily and 1-minute data for **47 of 48 equity markets tested** across the Americas, Europe, Asia-Pacific and the Middle East & Africa. The Philippines is the one real gap. A single `exchanges.yaml` maps Bloomberg codes (e.g. `JT`, `BZ`, `LN`) to Yahoo suffixes, calendars, currencies and minor-unit divisors.
 - **Two biggest modelling gaps to fix:** (1) model the "Next Tick" ~20-minute fill delay with 1-minute bars; (2) show every number with its sample size, a confidence interval, and a comparison against the base rate of the same universe. That base-rate comparison also reduces the survivorship problem.
 
 ---
@@ -122,6 +123,101 @@ Free data can't fix it fully, but four steps make it much smaller:
 | FX timing | Asian closes come hours before the US close | Convert at each market's close using the same-day FX close; note it as a small daily error. |
 | Small samples | n < 10 own-record cases | Show the n, a confidence interval and a colour warning on every figure, plus a shrunk estimate (see the odds-engine design). |
 
+### 1.5 Global market coverage (US, Brazil, Europe, Asia and the rest)
+
+Goal: cover any stock that could be in the WLS index, the way Bloomberg does, using free data first.
+
+**What was tested.** On 23 Oct 2026, from a Linux cloud box, I called Yahoo's chart API (`/v8/finance/chart`, browser User-Agent) for one large stock per exchange. I asked for daily data and 1-minute data over the last 5 days. The [Yahoo exchange list](https://help.yahoo.com/kb/SLN2310.html) gave the suffix, quote delay and data vendor (ICE) for each market. Calendars were checked by installing `exchange_calendars` 4.13.2, which ships 71 calendars, and `pandas_market_calendars` 5.5.0.
+
+**Result: 47 of 48 equity markets tested returned daily and 1-minute data.** The Philippines was the only market that failed. A few single tickers also failed because I had the symbol wrong, not because the market is missing: Kakao moved to KOSPI, OPAP.AT now trades as ALWN.AT, and Maybank is `1155.KL`.
+
+| Region | Market (Yahoo suffix) | Live test | Ccy (quote unit) | Calendar | Yahoo delay |
+|---|---|---|---|---|---|
+| **Americas** | US NYSE/Nasdaq (none) | ✅ AAPL | USD | XNYS | real-time |
+| | Brazil B3 (.SA) | ✅ PETR4 | BRL | BVMF | 15 min |
+| | Mexico (.MX) | ✅ WALMEX | MXN | XMEX | 20 min |
+| | Canada TSX (.TO) / TSXV (.V) | ✅ RY | CAD | XTSE | real-time |
+| | Chile (.SN) | ✅ FALABELLA | CLP | XSGO | 15 min |
+| | Argentina (.BA) | ✅ YPFD | ARS | XBUE | 30 min |
+| | Colombia (.CL) | ✅ ECOPETROL | COP | XBOG | 20 min |
+| | Peru | ✅ via US listing (BAP, NYSE); Lima itself not on Yahoo's list | PEN / USD | XLIM | — |
+| **Europe** | UK LSE (.L) | ✅ SHEL | **GBp (pence ÷100)** | XLON | 20 min |
+| | Euronext Amsterdam (.AS), Paris (.PA), Brussels (.BR), Lisbon (.LS), Dublin (.IR) | ✅ ASML, MC, ABI, EDP, RYA | EUR | XAMS, XPAR, XBRU, XLIS, XDUB | 15 min |
+| | Germany Xetra (.DE) | ✅ SAP | EUR | XETR | 15 min |
+| | Switzerland SIX (.SW) | ✅ NESN | CHF | XSWX | 30 min |
+| | Spain (.MC), Italy (.MI), Austria (.VI), Greece (.AT) | ✅ ITX, ENEL, EBS, ETE | EUR | XMAD, XMIL, XWBO, ASEX | 15–20 min |
+| | Nordics: Copenhagen (.CO), Oslo (.OL), Stockholm (.ST), Helsinki (.HE) | ✅ NOVO-B, EQNR, VOLV-B, NOKIA | DKK, NOK, SEK, EUR | XCSE, XOSL, XSTO, XHEL | real-time / 15 min |
+| | Poland (.WA), Turkey (.IS) | ✅ PKO, THYAO | PLN, TRY | XWAR, XIST | 15 min |
+| **Asia-Pacific** | Japan Tokyo (.T) | ✅ 7203 | JPY | XTKS | 20 min |
+| | India NSE (.NS) / BSE (.BO) | ✅ RELIANCE | INR | XNSE (pmc) / XBOM | NSE real-time |
+| | Korea KOSPI (.KS) / KOSDAQ (.KQ) | ✅ 005930 (KOSPI), 247540 (KOSDAQ) | KRW | XKRX | 20 min |
+| | Hong Kong (.HK) | ✅ 0700 | HKD | XHKG | 15 min |
+| | China Shanghai (.SS) / Shenzhen (.SZ) | ✅ 600519, 000858 | CNY | XSHG (use for both) | 30 min |
+| | Taiwan (.TW / .TWO) | ✅ 2330 | TWD | XTAI | 20 min |
+| | Australia (.AX), New Zealand (.NZ) | ✅ BHP, FPH | AUD, NZD | XASX, XNZE | 20 min |
+| | Singapore (.SI), Malaysia (.KL), Thailand (.BK), Indonesia (.JK) | ✅ D05, 1155, PTT, BBCA | SGD, MYR, THB, IDR | XSES, XKLS, XBKK, XIDX | 10–20 min |
+| | Philippines (.PS) | ❌ equities not served (Yahoo lists only PSE *indices*) | PHP | XPHS | — |
+| | Vietnam (.VN) | ✅ VCB | VND | **none**, derive from bars | 15 min |
+| **Middle East & Africa** | Saudi Tadawul (.SR) | ✅ 2222 | SAR | XSAU | 15 min |
+| | Israel (.TA) | ✅ TEVA | **ILA (agorot ÷100)** | XTAE | 20 min |
+| | South Africa JSE (.JO) | ✅ NPN | **ZAc (cents ÷100)** | XJSE | 15 min |
+| | Kuwait (.KW), Qatar (.QA), UAE DFM (.AE) | ✅ NBK, QNBK, EMAAR | **KWF (fils ÷1000)**, QAR, AED | **none**, derive from bars | 15 min |
+
+Other things the tests showed:
+
+| Item | Finding | Design consequence |
+|---|---|---|
+| Daily history | ~26 years (PETR4.SA and 7203.T both back to Jan 2000) when `period1`/`period2` are given. `range=max` quietly switches to monthly bars. | Always request daily data with explicit dates. |
+| Intraday history | 1-min: only the **last ~30 days**, at most ~8 days per request. 5-min: 60 days. 1-hour: ~730 days. | **Archive 1-minute bars every night from day 1.** Otherwise the Next-Tick fill calibration loses data after 30 days. |
+| FX | All 25 pairs tested (`XXXUSD=X`) returned data, including BRL, INR, KRW, TWD, ZAR, SAR, TRY, IDR and CLP. | One FX table covers every market. |
+| Minor-unit quotes | GBp, ZAc, ILA and KWF are quoted in pence, cents, agorot and fils. | `exchanges.yaml` holds a `quote_divisor` per market. Getting this wrong makes a stock look 100× its real size and breaks the 20% cap. |
+| Benchmarks | ACWI, ^GSPC, ^BVSP, ^N225, ^NSEI, ^KS11, ^STOXX, ^FTSE and ^HSI all work. | Default proxy is ACWI; local indices are available for "vs home market" views. |
+| Calendars | `exchange_calendars` covers 69 equity/derivatives venues; `pandas_market_calendars` adds NSE. No calendar for Vietnam, Kuwait, Qatar, UAE or Egypt. | For those five, session dates come from the days that actually have bars. |
+| Data quirks | Yahoo returns "symbol may be delisted" both for real delistings and for wrong suffixes. Tickers change too (e.g. OPAP.AT now trades as ALWN.AT). | Validate the universe file nightly and flag any symbol that stops returning data. |
+
+**Mapping Bloomberg tickers to Yahoo.** We type Bloomberg tickers on the Terminal (e.g. `7203 JT Equity`), but Yahoo needs `7203.T`. One `config/exchanges.yaml` row per market holds the whole mapping:
+
+```yaml
+- bbg: JT        # Bloomberg exchange code (JP = Japan composite also maps here)
+  yahoo: .T
+  mic: XTKS      # calendar
+  ccy: JPY
+  quote_divisor: 1
+  tz: Asia/Tokyo
+- bbg: LN
+  yahoo: .L
+  mic: XLON
+  ccy: GBP
+  quote_divisor: 100   # Yahoo quotes in pence
+```
+
+I'll pre-fill the main codes: US, BZ, MM, CN/CT, CI, AR, LN, NA, FP, BB, PL, ID, GY, SW/SE, SM, IM, AV, GA, DC, NO, SS, FH, PW, TI, JT, IN/IS/IB, KS/KQ, HK, CH/C1/C2, TT, AU/AT, NZ, SP, MK, TB, IJ, VN, AB, IT, SJ, KK, QD and UH. These come from memory, so you need to **check them against real Terminal tickers before we rely on them** (one look per market). Fixing one is a one-line change. Some exceptions need extra care: share classes (`NOVOB DC` ↔ `NOVO-B.CO`), Hong Kong zero-padding (`700 HK` ↔ `0700.HK`), and Brazilian numeric suffixes (`PETR4 BZ` ↔ `PETR4.SA`).
+
+**Building the universe (which names, not just which markets).** Bloomberg screens the full WLS index. With free data, three options:
+
+| Option | Coverage | Cost | Note |
+|---|---|---|---|
+| A. Our current ~650-name list + additions from the Terminal (EQS screen → Excel export) | Whatever we screen | Free | **Default.** Run EQS with "member of WLS" and export it. That gives the true contest universe with Bloomberg tickers, which `exchanges.yaml` converts. |
+| B. iShares ETF holdings CSVs (e.g. ACWI ≈ 2,300 names, plus country ETFs) | Large and mid caps in ~47 markets | Free download | Good for checking coverage. Its holdings use MSCI's list, which is close to WLS but not the same. Check the iShares site terms before automating it. |
+| C. Paid all-world provider symbol lists | Full exchange listings | ~$20–30/month and up | Only if A and B fall short. |
+
+**Free versus paid: where Bloomberg-like coverage really comes from.**
+
+| Source | Markets | Intraday | Cost | Fit |
+|---|---|---|---|---|
+| **Yahoo chart API** (via yfinance or direct) | ~50 equity markets, tested above | 1-min for 30 days | Free; [personal use](https://github.com/ranaroussi/yfinance) | **Phase 1 primary** |
+| **Bloomberg BLPAPI** (via xbbg) | Everything in WLS, with real WLS levels, events and ratings | Yes | Already paid by NMIMS *if* API use is allowed | **Best possible**; depends on open question 1 |
+| LSEG Workspace / Eikon or FactSet (if NMIMS has a seat) | Global | Yes | University licence | Ask the library; same data-terms caveat as Bloomberg |
+| [EODHD](https://eodhd.com/list-of-stock-markets) | 63 exchange entries listed (marketing says 70+); covers the gaps above, e.g. Philippines (PSE), Pakistan, Sri Lanka, several African markets | Plan-dependent | From ~$19.99/month; free tier very limited | **Paid fallback** if Yahoo breaks |
+| [Twelve Data](https://datarade.ai/data-providers/twelve-data/profile) | Claims 250+ venues | Yes | International data from ~$29/month ([third-party figure](https://geekflare.com/guides/best-stock-market-api/); check the official page) | Alternative fallback |
+| Finnhub / FMP free tiers | Mostly US on free plans | Limited | Free to paid | Earnings dates (US) only |
+
+**Bottom line.** Yahoo already covers every market in our current list and almost every WLS country, for free and with 1-minute bars. The real gaps are:
+- The Philippines.
+- Calendars for Vietnam and the Gulf (worked around by deriving sessions from bars).
+- Intraday history older than 30 days (fixed by archiving from now on).
+- **WLS membership and index levels themselves.** Only Bloomberg has these, so they come from Terminal exports (EQS for members, GP for levels) unless BLPAPI is allowed.
+
 ---
 
 ## 2. Architecture
@@ -177,7 +273,8 @@ Trado/
   pyproject.toml            # pinned deps; Python 3.12 (works on Windows and Linux)
   config/
     contest.yaml            # capital, caps, end date, delay minutes, stop %, benchmark proxy
-    universe.csv            # ~650 names: ticker, yahoo_symbol, exchange MIC, currency, sector, theme
+    exchanges.yaml          # one row per market: Bloomberg code, Yahoo suffix, MIC calendar, ccy, quote_divisor, tz
+    universe.csv            # names: bbg_ticker, yahoo_symbol (derived), sector, theme; from our list + EQS export
     themes.yaml             # oil, drugs, AI platforms -> tickers
     bloomberg_maps/         # column maps for each Bloomberg export type
   data/                     # gitignored: trado.duckdb + parquet cache + raw exports
@@ -244,7 +341,8 @@ Goal: replace rebuilding everything by hand in chat with a cached data store, fi
 |---|---|---|---|
 | 1 | Project skeleton, `contest.yaml`, `universe.csv` (from our current list) | 2 h | `pip install -e .` works on Windows and Linux |
 | 1 | Yahoo loader (daily + 1-min, retry, browser User-Agent) + DuckDB/Parquet cache + incremental refresh | 4 h | Full 650-name daily refresh < 10 min; repeat run < 1 min |
-| 1 | Calendars (exchange_calendars + NSE) + FX to USD | 2 h | Every price has a USD value and a valid session date |
+| 1 | Calendars (exchange_calendars + NSE + bar-derived sessions for VN/Gulf) + FX to USD + `exchanges.yaml` (Bloomberg↔Yahoo map, minor-unit divisors) | 3 h | Every price has a USD value and a valid session date; GBp/ZAc/ILA/KWF tests pass |
+| 1 | Nightly archive job for 1-minute bars (Yahoo keeps only ~30 days) + universe check (flag symbols that stop returning data) | 1 h | Runs on a schedule; a missing symbol shows up as an alert |
 | 2 | Indicators (SMA 20/50/200, slope, RSI, 1M/3M return, 60-day volatility), TA-Lib cross-check test | 3 h | Matches TA-Lib to 1e-6 |
 | 2 | Screener + CSV/Streamlit table | 3 h | Same pass list as our last manual screen |
 | 2–3 | Own-record backtester + stop + Next-Tick fill model + stats (CI, control group, shrinkage, warning) | 6 h | INSW golden test passes |
@@ -255,7 +353,7 @@ Goal: replace rebuilding everything by hand in chat with a cached data store, fi
 | 5 | Streamlit one-pager (book, distance to stops, events next 10 days, odds, alerts) | 4 h | Teammates open it and read it without help |
 | 5 | Golden tests + README "how to run" for teammates | 2 h | `pytest` passes; a teammate runs it from the README |
 
-Total ≈ 42 hours. That's tight for 5 days alongside trading. **If time runs short, cut in this order:** leaderboard model, then correlation chart, then 1-minute fill model (fall back to daily open + slippage).
+Total ≈ 44 hours. That's tight for 5 days alongside trading. **If time runs short, cut in this order:** leaderboard model, then correlation chart, then 1-minute fill model (fall back to daily open + slippage).
 
 Phase 1 is **not** going to include: OCR, BLPAPI, ML, vectorbt, point-in-time universes, multi-user hosting.
 
@@ -305,6 +403,8 @@ At most three of these change the design. The rest just need a quick yes or no.
 3. **20% cap timing:** Does Bloomberg apply the 20% limit only when a trade is placed, or also to drift afterwards? This sets whether drift is a hard alert or a note.
 
 Quick confirmations:
+- Can you check the Bloomberg exchange codes in §1.5 against real tickers, and send one EQS export of WLS members? That makes the contest universe exact.
+- Does NMIMS also license LSEG Workspace/Eikon or FactSet? Either would be a second global source.
 - Can we get WLS index daily levels (Terminal GP → export) once a week? Without them, all "Rel" numbers use ACWI as a proxy.
 - Teammates' skills: will anyone besides you run Python, or do the other four only read the dashboard? This sets how much effort goes into hosting versus a local run.
 - Is Python 3.12 OK on your Windows laptop? Several picks need ≥ 3.10–3.12.
